@@ -216,16 +216,7 @@ public with sharing class DMLOperations {
             // Extract the Account Name from Contact's LastName
             String accountName = myContact.LastName;            
              // Get the account based on the name or create one if it doesn't exist          
-            List<Account> existingAccounts = [SELECT Id, Description FROM Account WHERE Name = :accountName];
-            Account acc;
-            if(!existingAccounts.isEmpty()) {
-                acc = existingAccounts[0];
-                acc.Description = 'Updated Account';
-                update acc;
-            } else {
-                acc = new Account(Name = accountName, Description = 'New Account');
-                insert acc;
-            }
+           Account acc = upsertAccount(accountName);
             // Link the Contact to its Account using the Account Id
             myContact.AccountId = acc.Id;                 
         }
