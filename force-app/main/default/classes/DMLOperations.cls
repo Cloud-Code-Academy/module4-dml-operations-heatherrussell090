@@ -157,25 +157,43 @@ public with sharing class DMLOperations {
      */
     public static void upsertOpportunities(String accountName, List<String> oppNames) {        
                 
-        Account myAccount = new Account(Name = accountName);
-        insert myAccount;    
+        List<Account> existingAccounts = [SELECT Id FROM Account WHERE Name = :accountName];
+        Account myAccount;
+
+        if(!existingAccounts.isEmpty()) {
+            myAccount = existingAccounts[0];
+        } else {
+            myAccount = new Account(Name = accountName);
+        }
+        upsert myAccount; 
+
         
-        List<Opportunity> oppList = new List<Opportunity>();    
-        // Loop through each Opportunity name
-        for(String oppName : oppNames) {
-            Opportunity newOpp = new Opportunity();         // Create an Opportunity with the given name
+       List<Opportunity> oppList = new List<Opportunity>();
+        //Map to store existing opps associated with the account
+       Map<String, Opportunity> existingOpportunitiesMap = new Map<String, Opportunity>();
+
+       for(Opportunity opp : [SELECT Id, Name FROM Opportunity WHERE AccountId = :myAccount.Id AND Name IN :oppNames]) {
+        existingOpportunitiesMap.put(opp.Name, opp);
+       }
+       //Loop through each opp name
+       for(String oppName : oppNames) {
+        Opportunity newOpp;
+        if(existingOpportunitiesMap.containsKey(oppName)) {
+            newOpp = existingOpportunitiesMap.get(oppName);         //if opp exists, use it
+        } else {
+            newOpp = new Opportunity();                                //if not opp exists, create a new one
             newOpp.AccountId = myAccount.Id;
             newOpp.Name = oppName;
             newOpp.StageName = 'Prospecting';
-            newOpp.CloseDate = Date.today().addDays(30);
-            oppList.add(newOpp);                            // Add the Opportunity to the list
+            newOpp.CloseDate = Date.Today().addDays(30);
         }
-           
-           upsert oppList;
-        }
-        
-        
+        oppList.add(newOpp);
+       }   
     
+    upsert oppList;
+
+}  
+           
     
     /**
      * Question 9
@@ -211,16 +229,30 @@ public with sharing class DMLOperations {
 	 * @param contactsToUpsert List of Contacts to be upserted and linked to accounts.
 	 */
 	public static void upsertAccountsWithContacts(List<Contact> contactsToUpsert) {
-		// Loop through each Contact
-        for(Contact myContact : contactsToUpsert) {
-            // Extract the Account Name from Contact's LastName
-            String accountName = myContact.LastName;            
-             // Get the account based on the name or create one if it doesn't exist          
-           Account acc = upsertAccount(accountName);
-            // Link the Contact to its Account using the Account Id
-            myContact.AccountId = acc.Id;                 
+		Set<String> accountNamesToQuery = new Set<String>();
+        for(Contact con : contactsToUpsert) {
+            accountNamesToQuery.add(con.LastName);
         }
-		// Upsert the Contacts
+
+        Map<String, Account> accountByAccountName = new Map<String, Account>();
+
+        for(Account acc : [SELECT Id, Name FROM Account WHERE Name IN :accountNamesToQuery]) {
+            accountByAccountName.put(acc.Name, acc);
+        }
+
+        for(Contact con : contactsToUpsert) {
+            if(accountByAccountName.containsKey(con.LastName)) {
+                continue;
+            }
+            accountByAccountName.put(con.LastName, new Account(Name = con.LastName));
+            
+        }
+
+        Database.upsert(accountByAccountName.values());
+
+        for(Contact con : contactsToUpsert) {
+            con.AccountId = accountByAccountName.get(con.LastName).Id;
+        }            
         upsert contactsToUpsert;
 	}
 
